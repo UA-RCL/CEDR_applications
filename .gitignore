@@ -1,0 +1,6 @@
+# Ignore shared objects
+*.so
+# Ignore compiled executables
+*.out
+# Ignore dot files for DAGs
+*.dot

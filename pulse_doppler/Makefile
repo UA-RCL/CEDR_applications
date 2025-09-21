@@ -1,0 +1,63 @@
+ARCH ?= x86
+
+INCLUDES =  -I../../../libcedr/
+FLAGS = -shared -fPIC -O3
+STANDALONE_FLAGS = -DCPU_ONLY -O3
+
+ifeq ($(ARCH),x86)
+CXX=g++
+CC=gcc
+STANDALONE_LIB = -lm -lgsl -lgslcblas -lpthread -lstdc++ -Wno-unused-result
+ASM_TIMER_FLAG = 
+endif
+
+ifeq ($(ARCH),aarch64)
+CXX=aarch64-linux-gnu-g++
+CC=aarch64-linux-gnu-gcc
+FLAGS += -DUSE_ASM_TIMERS
+STANDALONE_LIB = ../../../libcedr/aarch64_lib/libgsl.a ../../../libcedr/aarch64_lib/libgslcblas.a -lm -lpthread -lstdc++ -Wno-unused-result
+ASM_TIMER_FLAG = -DUSE_ASM_TIMERS
+endif
+
+CPU_ONLY_SOURCES = ../../../libcedr/cpu/*.cpp
+APP_NAME = pulse_doppler
+SOURCES = pulse_doppler_b.c
+SOURCES_NB = pulse_doppler_nb.c
+SOURCES_NB_ZIP = pulse_doppler_nb_zip.c
+SOURCES_phased = pulse_doppler_phased_nb.c
+SOURCES_TASKFLOW = pulse_doppler_taskflow_nb.c
+omp_sch ?= dynamic
+omp_n ?= 4
+OMP_FLAGS= -fopenmp -DSCHEDULER=$(omp_sch) -DTHREADS=$(omp_n)
+#MAIN_FUNC_TIME?=-DTIME_CAPTURE
+default: blocking nonblocking
+
+zip: $(SOURCES_NB_ZIP)
+	$(CC) $(INCLUDES) $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(FLAGS) $(SOURCES_NB_ZIP) -o $(APP_NAME)-nb-zip-$(ARCH).so
+	$(CC) $(INCLUDES) $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(STANDALONE_FLAGS) $(SOURCES_NB_ZIP) $(CPU_ONLY_SOURCES) -o $(APP_NAME)-nb-zip-$(ARCH).out ${STANDALONE_LIB}
+
+blocking:
+	$(CC) $(INCLUDES) $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(FLAGS) $(SOURCES) -o $(APP_NAME)-$(ARCH).so
+	$(CC) $(INCLUDES) $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(STANDALONE_FLAGS) $(SOURCES) $(CPU_ONLY_SOURCES) -o $(APP_NAME)-$(ARCH).out ${STANDALONE_LIB}
+	
+nonblocking:	
+	$(CC) $(INCLUDES) $(OMP_FLAGS) $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(FLAGS) $(SOURCES_NB) -o $(APP_NAME)_nb-$(ARCH).so
+	$(CC) $(INCLUDES) $(OMP_FLAGS) $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(STANDALONE_FLAGS) $(SOURCES_NB) $(CPU_ONLY_SOURCES) -o $(APP_NAME)_nb-$(ARCH).out ${STANDALONE_LIB}
+
+phased:
+	$(CXX) $(INCLUDES) $(OMP_FLAGS) $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(FLAGS) $(SOURCES_phased) -o $(APP_NAME)_phased_nb-$(ARCH).so
+	$(CXX) $(INCLUDES) $(OMP_FLAGS) $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(STANDALONE_FLAGS) $(SOURCES_phased) $(CPU_ONLY_SOURCES) -o $(APP_NAME)_phased_nb-$(ARCH).out ${STANDALONE_LIB}
+
+SHELL := /bin/bash
+taskflow: INCLUDES += -I../../../taskflow
+taskflow: CPU_ONLY_SOURCES += ../../../libcedr/taskflow/*.cpp
+taskflow: FLAGS += -std=c++17
+taskflow: STANDALONE_FLAGS += -std=c++17
+taskflow: $(SOURCES_TASKFLOW)
+	$(CXX) $(INCLUDES) $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(FLAGS) $(SOURCES_TASKFLOW) -o $(APP_NAME)_taskflow_nb-$(ARCH).so
+	$(CXX) $(INCLUDES) -DDAG_PARSE $(MAIN_FUNC_TIME) $(ASM_TIMER_FLAG) $(STANDALONE_FLAGS) $(SOURCES_TASKFLOW) $(CPU_ONLY_SOURCES) -o $(APP_NAME)_taskflow_nb-$(ARCH).out ${STANDALONE_LIB}
+
+clean:
+	rm -f *.so
+	rm -f *.o
+	rm -f *.out	
